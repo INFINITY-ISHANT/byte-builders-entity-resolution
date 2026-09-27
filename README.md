@@ -21,6 +21,7 @@ normalise ──► block (GPU kNN + exact keys) ──► XGBoost v1 ──► 
    - Four TF-IDF indexes, searched with sparse top-k on the GPU (torch CSR SpGEMM) in both directions: name+address words, address-only, name 4-grams, and skeleton 4-grams.
    - Six exact keys.
    - 40 candidates kept per S1. This finds **97.9%** of true pairs; a perfect matcher on these candidates would score 0.9925.
+   - A learned pruning step (the stage-1 model) then cuts this to **5.8 candidates per S1**, the set the final matcher scores.
 3. **Stage 1.** XGBoost (CUDA) on 76 pair features: string similarities, address parts, and competition between S1s for the same record.
 4. **Stage 2.** A second XGBoost adds:
    - **cluster features:** does a candidate agree with the S1's other likely duplicates?

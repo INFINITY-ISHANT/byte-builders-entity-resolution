@@ -134,13 +134,48 @@ def run_validator(suffix: str = "") -> None:
     print(r.stdout[-3000:], r.stderr[-2000:])
 
 
-def write_only(suffix: str, strict: float | None, suspect_t: float | None = None) -> None:
-    """Decide from the cached test probabilities and write only matching_results<suffix>.tsv.
+def write_candidates(probs: pl.DataFrame, matches: pl.DataFrame, rec: pl.DataFrame) -> None:
+    """Write candidate_pairs.tsv = the pairs the final matcher (v2) scores.
 
-    candidate_pairs.tsv is unchanged between model versions (same blocking), so it is not
-    rewritten; the official validator is still run against it."""
+    Candidate generation is a cascade: blocking retrieves ~46 candidates per S1, then the
+    learned pruning stage (v1) keeps only pairs with p1 >= V2_MIN_P1 (~6 per S1, 99.95% of the
+    reachable true matches); only these reach the final matcher, so they are the candidate set.
+    Final matches are unioned in as a guarantee that matches are a subset of candidates."""
+    from train import V2_MIN_P1
+    kept = probs.filter(pl.col("p1") >= V2_MIN_P1).select("s1_idx", "cand_idx")
+    cand = pl.concat([kept, matches.select("s1_idx", "cand_idx")]).unique()
+    n_s1 = rec.filter(pl.col("src") == 1).height
+    print(f"candidate pairs after pruning: {cand.height:,} ({cand.height / n_s1:.2f} per S1; "
+          f"retrieved before pruning: {probs.height:,}, {probs.height / n_s1:.2f} per S1)")
+    with io.stage("write candidate_pairs.tsv"):
+        write_tsv(id_lists(cand, rec, "candidate_entity_ids"), C.OUTPUT_DIR / "candidate_pairs.tsv")
+
+
+def candidates_only() -> None:
+    """Rewrite candidate_pairs.tsv from cached test v1 probabilities, keeping the existing
+    matching_results.tsv unchanged (its pairs are unioned into the candidates)."""
+    probs = pl.read_parquet(C.CACHE_DIR / "test_probs.parquet", columns=["s1_idx", "cand_idx", "p1"])
+    rec = io.load_records("test", ["idx", "entity_id", "src", "country"])
+    ids = rec.select(pl.col("idx"), pl.col("entity_id"))
+    m = io.read_tsv(C.OUTPUT_DIR / "matching_results.tsv")
+    m = (m.with_columns(pl.col("matched_entity_ids").str.split(",")).explode("matched_entity_ids")
+          .filter(pl.col("matched_entity_ids") != "")
+          .join(ids.rename({"idx": "s1_idx", "entity_id": "source1_entity_id"}), on="source1_entity_id")
+          .join(ids.rename({"idx": "cand_idx", "entity_id": "matched_entity_ids"}), on="matched_entity_ids")
+          .select("s1_idx", "cand_idx"))
+    from train import V2_MIN_P1
+    chk = m.join(probs, on=["s1_idx", "cand_idx"], how="left")
+    print(f"final matches: {m.height:,} | found in regenerated candidates: {chk['p1'].is_not_null().mean():.5f} "
+          f"| with p1 >= {V2_MIN_P1}: {(chk['p1'] >= V2_MIN_P1).mean():.5f}")
+    write_candidates(probs, m, rec)
+    run_validator("")
+
+
+def write_only(suffix: str, strict: float | None, suspect_t: float | None = None) -> None:
+    """Decide from the cached test probabilities, write matching_results<suffix>.tsv and (for the
+    main file) the pruned candidate_pairs.tsv; run the official validator."""
     from decide import apply_rule
-    probs = pl.read_parquet(C.CACHE_DIR / "test_probs.parquet", columns=["s1_idx", "cand_idx", "prob"])
+    probs = pl.read_parquet(C.CACHE_DIR / "test_probs.parquet", columns=["s1_idx", "cand_idx", "p1", "prob"])
     th = load_thresholds()
     if strict is not None and suspect_t is not None:
         from sibling import region_strict
@@ -149,10 +184,12 @@ def write_only(suffix: str, strict: float | None, suspect_t: float | None = None
         pred = apply_rule(probs, strict, strict)
     else:
         pred = decide(probs, th)
-    del probs
     rec = io.load_records("test", ["idx", "entity_id", "src", "country"])
     match = id_lists(pred, rec, "matched_entity_ids")
     write_tsv(match, C.OUTPUT_DIR / f"matching_results{suffix}.tsv")
+    if not suffix:
+        write_candidates(probs, pred, rec)
+    del probs
     st = (pred.group_by("s1_idx").len()
           .join(rec.filter(pl.col("src") == 1).select(pl.col("idx").alias("s1_idx"), "country"),
                 on="s1_idx", how="right").with_columns(pl.col("len").fill_null(0)))
@@ -172,7 +209,9 @@ def main():
                     help="reuse cached test v1 probabilities + spilled features (skip pass 1)")
     ap.add_argument("--suffix", default="", help="write matching_results<suffix>.tsv (keeps the main file)")
     ap.add_argument("--stage1-only", action="store_true",
-                    help="features + v1 only: cache test p1 / spilled features and write candidate_pairs.tsv")
+                    help="features + v1 only: cache test p1 and spilled features")
+    ap.add_argument("--candidates-only", action="store_true",
+                    help="rewrite the pruned candidate_pairs.tsv from cached p1; keep matching_results.tsv")
     ap.add_argument("--write-only", action="store_true",
                     help="skip scoring: decide from cached test_probs.parquet and write only the matches")
     ap.add_argument("--strict", type=float, default=None,
@@ -182,6 +221,9 @@ def main():
     a = ap.parse_args()
     if a.write_only:
         write_only(a.suffix, a.strict, a.suspect_t)
+        return
+    if a.candidates_only:
+        candidates_only()
         return
     C.N_JOBS = C.N_JOBS_INFER            # inference uses more CPU workers (string features, stage 2)
     print(f"inference workers: {C.N_JOBS}")
@@ -195,9 +237,6 @@ def main():
         with io.stage("score test (v1)"):
             probs = score_split("test", bst, fcols, spill=True)
         probs.with_columns(pl.col("p1").alias("prob")).write_parquet(C.CACHE_DIR / "test_probs.parquet")
-        rec = io.load_records("test", ["idx", "entity_id", "src", "country"])
-        with io.stage("write candidate_pairs.tsv"):
-            write_tsv(id_lists(probs, rec, "candidate_entity_ids"), C.OUTPUT_DIR / "candidate_pairs.tsv")
         return
     if a.reuse_v1:
         probs = pl.read_parquet(C.CACHE_DIR / "test_probs.parquet").select("s1_idx", "cand_idx", "p1")

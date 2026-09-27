@@ -11,7 +11,9 @@
 We solve entity resolution with a **blocking → pairwise scoring → cluster-aware re-scoring → decision** pipeline that runs end to end on one laptop (16 GB RAM, 28 cores, RTX 4060 8 GB). The heavy numeric work runs on the GPU.
 
 1. **Normalisation.** Hand-written, country-agnostic dictionaries clean names and addresses: legal forms (incl. transliterated Indic and French), address abbreviations, US/Indian states and French regions/départements, native-script state names, and old/new city names. Non-Latin scripts are transliterated, and a consonant "skeleton" key makes transliterated and English spellings comparable.
-2. **Blocking.** Four TF-IDF indexes are searched with sparse top-k on the GPU in both directions (S1→pool, pool→S1), together with 6 exact keys, and capped at 40 candidates per S1. Pair recall on train is **97.9%**, and the entity-level ceiling is **0.9925** macro F0.5.
+2. **Blocking (a two-step cascade).**
+   - **Retrieval:** four TF-IDF indexes are searched with sparse top-k on the GPU in both directions (S1→pool, pool→S1), together with 6 exact keys, and capped at 40 candidates per S1 (about 46 with reverse-direction pairs). Pair recall on train is **97.9%**; the entity-level ceiling is **0.9925** macro F0.5.
+   - **Learned pruning:** the first-stage model keeps only pairs with probability ≥ 0.002. This leaves **5.8 candidates per S1** (10.05M test pairs, about 8× fewer) while retaining 99.95% of the true matches that survive retrieval. The submitted `candidate_pairs.tsv` is this pruned set: exactly the pairs the final matcher scores.
 3. **Matching.**
    - **v1:** XGBoost (CUDA) on 76 pair features.
    - **v2:** a second XGBoost that adds cluster-context features computed from out-of-fold v1 probabilities, "sibling business" features, and the score of a multilingual cross-encoder (MiniLM-L12, Apache-2.0).
@@ -68,7 +70,11 @@ Everything is partitioned by the `country` label, which is treated as an open se
   Features above the document-frequency cap are pruned so the sparse product stays tractable. Char 3-grams over millions of records were measured to be far too common. We verified that the GPU top-k matches the CPU `sparse_dot_topn` result (99.6% identical pairs, remainder ties).
 - **Exact keys**, with blocks larger than 50 per side dropped: `name_nospace`, `name_sorted`, house number + first street token, first name token + house number, phonetic code + city, postcode + first name token.
 - **Merge and cap:** union, full-vector cosines for all four indexes, and cheap score = words cos + 0.5 × max(name4, skel4 cos) + 0.3 × addr cos + 0.3 × key hit. Each S1 keeps its top **40**, plus every pair where the S1 is the pool record's rank-1 reverse neighbour.
-- **Candidate pairs generated:** 99.4M for train (45 per S1) and **80.3M for test** (46 per S1).
+- **Retrieved candidates:** 99.4M for train (45 per S1) and 80.3M for test (46 per S1).
+- **Learned pruning (final candidate set):** the first-stage XGBoost scores the retrieved pairs, and only pairs with probability ≥ 0.002 go on to the final matcher. That is **10.05M test pairs = 5.8 per S1**, the contents of `candidate_pairs.tsv`.
+  - On validation this keeps 11.5% of retrieved pairs and 99.95% of the true matches among them, so the pruned set's pair recall is about 97.8%.
+  - All 5.74M final matches lie inside it.
+  - The cascade exists because the search space must shrink at scale. Cheap vector retrieval narrows millions of records to about 46; a learned filter narrows these to about 6 before the expensive stage-2 features and the cross-encoder are computed.
 
 | Train pair recall | Overall | US | India |
 |---|---|---|---|

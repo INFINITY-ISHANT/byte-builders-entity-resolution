@@ -41,14 +41,19 @@ steps), in this order:
 | 6 | `expand.py --n-s1 500000` | extra out-of-sample S1s for stage 2 | 12 min |
 | 7 | `ce.py --score ext` | cross-encoder logits for them | 2 min |
 | 8 | `train.py --reuse --expand` | stage 2 (cluster + distractor + sibling features + CE) → XGBoost v2 ("v6") | 8 min |
-| 9 | `predict.py --stage1-only` | test features + v1, writes `output/candidate_pairs.tsv` | 12 min |
+| 9 | `predict.py --stage1-only` | test features + v1 probabilities (cached) | 12 min |
 | 10 | `ce.py --score test` | cross-encoder logits for uncertain test pairs | 13 min |
 | 11 | `predict.py --reuse-v1 --suffix _v6` | v6 test probabilities (source of confident pseudo-labels) | 20 min |
 | 12 | `train.py --reuse --expand --pseudo-te` | v7: target encodings also learn from confident test pseudo-labels | 6 min |
 | 13 | `predict.py --reuse-v1 --suffix _v7` | v7 test probabilities | 20 min |
-| 14 | `predict.py --write-only --strict 0.9` | final `output/matching_results.tsv` (one owner, threshold 0.9) + official validator | 2 min |
+| 14 | `predict.py --write-only --strict 0.9` | final `output/matching_results.tsv` (one owner, threshold 0.9) and `output/candidate_pairs.tsv` (the pruned candidate set, see below) + official validator | 3 min |
 
 *On the machine below. Peak RAM about 10 GB, VRAM < 5 GB.
+
+**Candidate generation is a two-step cascade.** Blocking retrieves about 46 candidates per S1. A learned
+pruning stage (the v1 model) then keeps only pairs with v1 probability >= 0.002. Only those reach the
+final matcher (v2), so they are what `candidate_pairs.tsv` contains. `predict.py --candidates-only`
+rewrites that file from cached v1 probabilities without touching `matching_results.tsv`.
 
 Other tools: `eda.py` (statistics), `test_normalize.py` and
 `metrics.py` (unit tests); `train.py --fit-country US --val-country India --no-stage2` for the
