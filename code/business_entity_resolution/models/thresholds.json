@@ -1,0 +1,9 @@
+{
+  "rule": "expected",
+  "prior": 0.0,
+  "objective": 0.9862051808342733,
+  "f05": 0.9865945166396562,
+  "model": "v2",
+  "ce": true,
+  "sib": true
+}

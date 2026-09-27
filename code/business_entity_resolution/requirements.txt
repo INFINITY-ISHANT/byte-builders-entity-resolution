@@ -1,0 +1,16 @@
+# Python 3.14 (Anaconda, Windows 11), NVIDIA GPU with CUDA. All licences permissive (MIT / BSD / Apache-2.0).
+polars==1.44.2
+pyarrow==23.0.1
+numpy==2.4.6
+scipy==1.18.0
+scikit-learn==1.9.0
+xgboost==3.4.1          # GPU (CUDA) gradient boosting, Apache-2.0
+torch==2.14.0           # CUDA build (cu132); GPU sparse kNN
+rapidfuzz==3.14.6
+Unidecode==1.4.0
+jellyfish==1.2.1
+psutil==7.2.2
+transformers==5.16.1     # cross-encoder (MiniLM-L12, Apache-2.0)
+tokenizers==0.23.2
+huggingface_hub==1.30.0
+sentencepiece==0.2.2

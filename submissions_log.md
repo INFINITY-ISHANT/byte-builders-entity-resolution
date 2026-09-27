@@ -1,0 +1,17 @@
+# Submissions log
+
+Every leaderboard upload: timestamp (IST), commit id (from the private development repository), validation macro F0.5 (overall / US / India),
+candidate pair recall on train, notes. The LB score column is filled in by hand after upload.
+
+| # | Timestamp (IST) | Commit | Val F0.5 (all / US / India) | Pair recall | LB score | Notes |
+|---|---|---|---|---|---|---|
+| 1 | 2026-09-26 16:30 | 17f3635 | 0.9638 / 0.9748 / 0.9472 | 0.9585 (US 0.972, India 0.938); ceiling F0.5 0.984 | | M1 baseline. TF-IDF words + name-4gram kNN (GPU) + 5 exact keys, cap 30/S1 (57.4M test pairs). XGBoost CUDA, 64 feats, 300k/100k S1 fit/val, lr 0.1, 1340 rounds. t=0.70, t_empty=0.75. Test: avg matches France 3.45 / US 3.34 / India 3.15; empty 5.1% / 5.8% / 6.9%. Validator PASS (incl. --check-ids). |
+| 2 | 2026-09-26 19:37 | d5bd9dc | 0.9813 / 0.9825 / 0.9750 | 0.9789 (US 0.989, India 0.964); ceiling F0.5 0.9925 | | M2. Blocking v2 (4 GPU kNN indexes + 6 keys, cap 40, 80.3M test pairs); normalisation v2 (FR regions, native states, Indic legal forms, skeleton); stage-2 cluster features + XGBoost v2; expected-F0.5 decision. Val is partition-sampled (84% US S1s). Test: avg matches France 3.53 / US 3.43 / India 3.32; empty 4.8% / 5.7% / 6.0%. Validator PASS. |
+| 3 | 2026-09-26 19:44 | d5bd9dc | (M2 probe) 0.9784 | same as #2 | 0.963 | Probe: M2 probabilities with plain threshold t=0.9 (matching_results_probe_t90.tsv). Val -0.003 but LB +0.005 -> test has many more near-copy distractors than train. |
+| 4 | 2026-09-26 22:35 | b1eb2d0 | 0.9855 / 0.9864 / 0.9812 (t=0.9 variant: 0.9843) | same as #2 | 0.973 (t90 file) | v3: + distractor-cluster features + MiniLM cross-encoder logit; v2 on p1>=0.002. Files: matching_results_v3.tsv (tuned expected-F0.5 rule) and matching_results_v3_t90.tsv (t=0.9, recommended). Validator PASS both. |
+| 5 | 2026-09-26 23:05 | 68071c9 | 0.9861 / 0.9869 / 0.9821 | same as #2 | 0.976 (t90 file) | v4: + sibling-business features (house-number gap, target-encoded extra/missing name words by skeleton, legal-form pair). Files: matching_results_v4.tsv (tuned) and matching_results_v4_t90.tsv (t=0.9, recommended). Test avg matches (t90) France 3.36 / US 3.36 / India 3.26. Validator PASS both. |
+| 6 | 2026-09-26 23:15 | 68071c9 | 0.9839 (t=0.95) | same as #2 | < 0.976 | v4 probabilities with plain threshold t=0.95 (matching_results_v4_t95.tsv). Strictness probe: val -0.0012 vs t=0.9. Test avg matches France 3.29 / US 3.34 / India 3.25. Validator PASS. |
+| 7 | 2026-09-26 23:40 | d544903 | 0.9861 (t=0.9: ~0.9852) | same as #2 | no gain | v5: + word-substitution / legal-change features. File matching_results_v5_t90.tsv (plain t=0.9, same decision as the 0.976 file). France avg matches 3.36. |
+| 8 | 2026-09-26 23:40 | d544903 | 0.9848 | same as #2 | no gain | v5 region-strict: t=0.8, but sibling-suspect pairs (house mismatch / word substitution / legal swap) need >= 0.95. File matching_results_v5_r80s95.tsv. |
+| 9 | 2026-09-27 00:30 | 0e9f9b6 | 0.9867 | same as #2 | 0.976 (t90 file, no change) | v6: stage-2 trained on fit + 500k extra out-of-sample S1s (4.17M v2 rows). File matching_results_v6_t90.tsv. |
+| 10 | 2026-09-27 09:28 | 1421e1d | 0.9866 | same as #2 | **0.977 (best, final)** | v7: v6 + target encodings enriched with 8.9M confident test pseudo-labels (French words / legal forms). File matching_results_v7_t90.tsv. France avg matches 3.33. |

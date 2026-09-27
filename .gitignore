@@ -1,0 +1,12 @@
+# challenge data and generated artefacts (not redistributed)
+student_resource/
+output/
+code/business_entity_resolution/cache/
+code/business_entity_resolution/models/*.ubj
+code/business_entity_resolution/models/*.parquet
+code/business_entity_resolution/models/ce_minilm/
+*.zip
+__pycache__/
+# editor files
+.vscode/
+*.pdf
