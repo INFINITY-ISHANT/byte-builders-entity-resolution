@@ -106,7 +106,8 @@ def labelled_matrix(fit_s1: np.ndarray, val_s1: np.ndarray, extra_cols: int):
     del cands
     ids = pl.concat(ids)
     gt = io.load_gt_pairs().with_columns(pl.lit(1, dtype=pl.Int8).alias("label"))
-    y = ids.join(gt, on=["s1_idx", "cand_idx"], how="left", maintain_order="left")["label"]            .fill_null(0).to_numpy().astype(np.int8)
+    y = (ids.join(gt, on=["s1_idx", "cand_idx"], how="left", maintain_order="left")["label"]
+            .fill_null(0).to_numpy().astype(np.int8))
     return ids, X, y, n_fit, fcols
 
 

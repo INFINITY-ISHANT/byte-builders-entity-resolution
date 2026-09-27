@@ -52,8 +52,8 @@ steps), in this order:
 
 **Candidate generation is a two-step cascade.** Blocking retrieves about 46 candidates per S1. A learned
 pruning stage (the v1 model) then keeps only pairs with v1 probability >= 0.002. Only those reach the
-final matcher (v2), so they are what `candidate_pairs.tsv` contains. `predict.py --candidates-only`
-rewrites that file from cached v1 probabilities without touching `matching_results.tsv`.
+final matcher (v2), so they are what `candidate_pairs.tsv` contains. The final
+`predict.py --write-only --strict 0.9` step writes both files from the cached test probabilities.
 
 Other tools: `eda.py` (statistics), `test_normalize.py` and
 `metrics.py` (unit tests); `train.py --fit-country US --val-country India --no-stage2` for the

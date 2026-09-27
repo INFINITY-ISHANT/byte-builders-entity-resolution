@@ -1,4 +1,4 @@
-"""End-to-end entrypoint: normalise -> block -> train (features, LightGBM, thresholds) -> predict.
+"""End-to-end entrypoint: normalise -> block -> train (features, XGBoost, thresholds) -> predict.
 
     python run_pipeline.py --stage all
     python run_pipeline.py --stage normalize|block|train|predict
@@ -26,12 +26,12 @@ STAGES = {
         ["train.py", "--reuse", "--expand"],                    # v6 stage 2
     ],
     "predict": [
-        ["predict.py", "--stage1-only"],                        # test v1 + candidate_pairs.tsv
+        ["predict.py", "--stage1-only"],                        # test v1 probabilities + spilled features
         ["ce.py", "--score", "test"],
         ["predict.py", "--reuse-v1", "--suffix", "_v6"],        # v6 test probabilities
         ["train.py", "--reuse", "--expand", "--pseudo-te"],     # v7 stage 2 (pseudo-label encodings)
         ["predict.py", "--reuse-v1", "--suffix", "_v7"],
-        ["predict.py", "--write-only", "--strict", "0.9"],      # final output/matching_results.tsv
+        ["predict.py", "--write-only", "--strict", "0.9"],      # final matching_results.tsv + candidate_pairs.tsv
     ],
 }
 

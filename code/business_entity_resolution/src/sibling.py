@@ -148,23 +148,3 @@ def sibling_features(split: str, pairs: pl.DataFrame) -> np.ndarray:
     feats = feats.join(d.select("rid", "l1", "l2").join(lg, on=["l1", "l2"], how="left").select("rid", "te_legal"),
                        on="rid", how="left")
     return feats.sort("rid").select(SIB_FEATS).to_numpy().astype(np.float32)
-
-
-def suspect_flags(split: str, pairs: pl.DataFrame) -> np.ndarray:
-    """Sibling-suspect pairs: house numbers differ, a word was substituted (not a typo), or the
-    legal form was swapped. Used to apply a stricter threshold only where siblings live."""
-    X = sibling_features(split, pairs)
-    f = {n: X[:, i] for i, n in enumerate(SIB_FEATS)}
-    return (np.nan_to_num(f["h_absdiff"]) >= 1) | (f["sub_word"] == 1) | (f["legal_swap"] == 1)
-
-
-def region_strict(split: str, probs: pl.DataFrame, t: float, t_suspect: float) -> pl.DataFrame:
-    """Plain threshold t, but sibling-suspect pairs need prob >= t_suspect (one-owner applied
-    after the suspect pairs are removed, so their record can still go to another S1)."""
-    from decide import apply_rule
-    band = probs.filter((pl.col("prob") >= t) & (pl.col("prob") < t_suspect))
-    sus = suspect_flags(split, band)
-    drop = band.filter(pl.Series(sus)).select("s1_idx", "cand_idx")
-    kept = probs.join(drop, on=["s1_idx", "cand_idx"], how="anti")
-    print(f"  region-strict: {len(band):,} pairs in [{t},{t_suspect}) | {int(sus.sum()):,} suspect removed")
-    return apply_rule(kept, t, t)

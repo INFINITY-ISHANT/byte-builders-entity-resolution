@@ -4,7 +4,6 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 
-import numpy as np
 import polars as pl
 import psutil
 
@@ -100,8 +99,3 @@ def write_id_lists(path, s1_ids, lists, header_col: str) -> None:
         f.write(f"source1_entity_id\t{header_col}\n")
         for s1, ids in zip(s1_ids, lists):
             f.write(s1 + "\t" + ",".join(ids) + "\n")
-
-
-def s1_mask(src: np.ndarray) -> np.ndarray:
-    """Boolean mask of Source-1 rows."""
-    return src == 1

@@ -230,14 +230,6 @@ def iter_features(split: str, cands: pl.DataFrame, chunk: int = 100_000):
     print(f"  features {done:,}/{n:,}", flush=True)
 
 
-def build_features(split: str, cands: pl.DataFrame, chunk: int = 100_000,
-                   precomputed_context: bool = False) -> pl.DataFrame:
-    """Compute all features for the candidate pairs (s1_idx, cand_idx kept first)."""
-    if not precomputed_context:
-        cands = add_group_context(cands)
-    return pl.concat(list(iter_features(split, cands, chunk)), rechunk=False)
-
-
 def feature_names(df: pl.DataFrame) -> list[str]:
     """Model input columns (everything except ids and label)."""
     return [c for c in df.columns if c not in ("s1_idx", "cand_idx", "label")]

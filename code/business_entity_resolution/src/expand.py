@@ -2,9 +2,10 @@
 
 v1 is trained on the fit S1s only, so its probabilities on any *other* train S1 are genuinely
 out-of-sample. For extra S1s (not fit/val, not used to train the cross-encoder, and not in the
-half used for the sibling target encodings) we compute v1 features + p1, stage-2 cluster
-features, sibling features and cross-encoder logits, and keep only the rows v2 uses
-(p1 >= V2_MIN_P1). train.py --reuse --expand then fits v2 on fit + extra rows.
+half used for the sibling target encodings) we compute v1 features + p1 and stage-2 cluster
+features, and keep only the rows v2 uses (p1 >= V2_MIN_P1). Cross-encoder logits come from
+ce.py --score ext; sibling features are added by train.py --reuse --expand (after it rebuilds
+the target encodings), which then fits v2 on fit + extra rows.
 
     python expand.py --n-s1 500000        # build cache/train_ext/*
     python ce.py --score ext              # cross-encoder logits for the extra band rows
@@ -39,7 +40,6 @@ def build(n_s1: int, batch: int = 200_000) -> None:
     """Compute v2-ready rows for the extra S1s, batch by batch, and cache them."""
     import xgboost as xgb
     from stage2 import S2_FEATS, cluster_features
-    from sibling import sibling_features
     from train import FEATS_PATH, MODEL_PATH, V2_MIN_P1, labelled_matrix, predict_proba
     s1 = extra_s1(n_s1)
     print(f"extra S1s: {len(s1):,}")
@@ -61,11 +61,8 @@ def build(n_s1: int, batch: int = 200_000) -> None:
         print(f"  kept {m.sum():,}/{len(p1):,} rows (positives kept {y[m].sum() / max(1, y.sum()):.4f})")
         del X, s2, ids
     X = np.vstack(Xs); y = np.concatenate(ys); ids = pl.concat(ids_l); p1 = np.concatenate(p1s)
-    with io.stage("extra sibling features"):
-        sib = sibling_features("train", ids)
     EXT_CACHE.mkdir(exist_ok=True)
     np.save(EXT_CACHE / "X.npy", X)
-    np.save(EXT_CACHE / "sib.npy", sib)
     np.save(EXT_CACHE / "y.npy", y)
     np.save(EXT_CACHE / "p1.npy", p1)
     ids.write_parquet(EXT_CACHE / "ids.parquet")

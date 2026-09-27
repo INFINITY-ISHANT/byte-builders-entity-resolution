@@ -27,7 +27,7 @@ from sklearn.feature_extraction.text import HashingVectorizer
 
 import config as C
 import io_utils as io
-from normalize import load_norm, norm_path
+from normalize import norm_path
 
 BITS = {"words_fwd": 0, "words_rev": 1, "name4_fwd": 2, "name4_rev": 3, "key_nospace": 4,
         "key_house_street": 5, "key_first_house": 6, "key_phon_city": 7, "key_post_first": 8,
@@ -256,8 +256,6 @@ def block_country(sub: pl.DataFrame, ex: ProcessPoolExecutor, s1_chunk: int = 60
     mats = {}
     for nm in ("words", "addr", "name4", "skel4"):
         mats[nm], df = tfidf(hash_docs(nm, docs, ex))
-        if nm not in KNN:
-            continue
         cap, k_fwd, k_rev = KNN[nm]
         Xp = prune(mats[nm], df, cap)
         A, B = Xp[s1_rows], Xp[pool_rows]

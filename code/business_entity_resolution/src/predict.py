@@ -151,39 +151,13 @@ def write_candidates(probs: pl.DataFrame, matches: pl.DataFrame, rec: pl.DataFra
         write_tsv(id_lists(cand, rec, "candidate_entity_ids"), C.OUTPUT_DIR / "candidate_pairs.tsv")
 
 
-def candidates_only() -> None:
-    """Rewrite candidate_pairs.tsv from cached test v1 probabilities, keeping the existing
-    matching_results.tsv unchanged (its pairs are unioned into the candidates)."""
-    probs = pl.read_parquet(C.CACHE_DIR / "test_probs.parquet", columns=["s1_idx", "cand_idx", "p1"])
-    rec = io.load_records("test", ["idx", "entity_id", "src", "country"])
-    ids = rec.select(pl.col("idx"), pl.col("entity_id"))
-    m = io.read_tsv(C.OUTPUT_DIR / "matching_results.tsv")
-    m = (m.with_columns(pl.col("matched_entity_ids").str.split(",")).explode("matched_entity_ids")
-          .filter(pl.col("matched_entity_ids") != "")
-          .join(ids.rename({"idx": "s1_idx", "entity_id": "source1_entity_id"}), on="source1_entity_id")
-          .join(ids.rename({"idx": "cand_idx", "entity_id": "matched_entity_ids"}), on="matched_entity_ids")
-          .select("s1_idx", "cand_idx"))
-    from train import V2_MIN_P1
-    chk = m.join(probs, on=["s1_idx", "cand_idx"], how="left")
-    print(f"final matches: {m.height:,} | found in regenerated candidates: {chk['p1'].is_not_null().mean():.5f} "
-          f"| with p1 >= {V2_MIN_P1}: {(chk['p1'] >= V2_MIN_P1).mean():.5f}")
-    write_candidates(probs, m, rec)
-    run_validator("")
-
-
-def write_only(suffix: str, strict: float | None, suspect_t: float | None = None) -> None:
+def write_only(suffix: str, strict: float | None) -> None:
     """Decide from the cached test probabilities, write matching_results<suffix>.tsv and (for the
     main file) the pruned candidate_pairs.tsv; run the official validator."""
     from decide import apply_rule
     probs = pl.read_parquet(C.CACHE_DIR / "test_probs.parquet", columns=["s1_idx", "cand_idx", "p1", "prob"])
     th = load_thresholds()
-    if strict is not None and suspect_t is not None:
-        from sibling import region_strict
-        pred = region_strict("test", probs, strict, suspect_t)
-    elif strict is not None:
-        pred = apply_rule(probs, strict, strict)
-    else:
-        pred = decide(probs, th)
+    pred = decide(probs, th) if strict is None else apply_rule(probs, strict, strict)
     rec = io.load_records("test", ["idx", "entity_id", "src", "country"])
     match = id_lists(pred, rec, "matched_entity_ids")
     write_tsv(match, C.OUTPUT_DIR / f"matching_results{suffix}.tsv")
@@ -193,7 +167,7 @@ def write_only(suffix: str, strict: float | None, suspect_t: float | None = None
     st = (pred.group_by("s1_idx").len()
           .join(rec.filter(pl.col("src") == 1).select(pl.col("idx").alias("s1_idx"), "country"),
                 on="s1_idx", how="right").with_columns(pl.col("len").fill_null(0)))
-    print(f"rule: {'t=' + str(strict) + (' suspect_t=' + str(suspect_t) if suspect_t else '') if strict is not None else th}")
+    print(f"rule: {th if strict is None else f't=t_empty={strict}'}")
     print(st.group_by("country").agg(pl.col("len").mean().alias("avg_matches"),
                                      (pl.col("len") == 0).mean().alias("pct_empty"), pl.len()))
     run_validator(suffix)
@@ -210,20 +184,13 @@ def main():
     ap.add_argument("--suffix", default="", help="write matching_results<suffix>.tsv (keeps the main file)")
     ap.add_argument("--stage1-only", action="store_true",
                     help="features + v1 only: cache test p1 and spilled features")
-    ap.add_argument("--candidates-only", action="store_true",
-                    help="rewrite the pruned candidate_pairs.tsv from cached p1; keep matching_results.tsv")
     ap.add_argument("--write-only", action="store_true",
-                    help="skip scoring: decide from cached test_probs.parquet and write only the matches")
+                    help="skip scoring: decide from cached test_probs.parquet and write the outputs")
     ap.add_argument("--strict", type=float, default=None,
                     help="with --write-only: plain threshold t=t_empty=STRICT instead of the tuned rule")
-    ap.add_argument("--suspect-t", type=float, default=None,
-                    help="with --strict: sibling-suspect pairs need prob >= SUSPECT_T")
     a = ap.parse_args()
     if a.write_only:
-        write_only(a.suffix, a.strict, a.suspect_t)
-        return
-    if a.candidates_only:
-        candidates_only()
+        write_only(a.suffix, a.strict)
         return
     C.N_JOBS = C.N_JOBS_INFER            # inference uses more CPU workers (string features, stage 2)
     print(f"inference workers: {C.N_JOBS}")
